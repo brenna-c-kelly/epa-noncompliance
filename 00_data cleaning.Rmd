@@ -1,0 +1,277 @@
+---
+title: "00_data cleaning"
+author: "Brenna Kelly"
+date: "2023-11-08"
+output: html_document
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+library(MASS)
+library(lme4)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(foreign)
+library(tidycensus)
+library(RColorBrewer)
+
+```
+
+
+## ACS Census tract data
+
+```{r}
+
+# all 50 states + DC
+ST <- c(#"AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "DC", 
+        #"FL", "GA", "HI", "ID", "IL", 
+        "IN", "IA", "KS", "KY",
+        "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE",
+        "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK",
+        "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT",
+        "VA", "WA", "WV", "WI", "WY")
+
+v_acs_21 <- load_variables(2021, "acs5", cache = TRUE) |>
+  filter(geography == "tract") # confirm variables to use
+
+get_all_states <- function(ST) {
+  for (i in ST) {
+    z_st <- get_acs(geography = "tract",
+                    variables = c("B01001_001", # total population
+                                  "B01001H_001", # White, non-hispanic
+                                  "B01001I_001", # hispanic or latino
+                                  "B01001B_001", # black
+                                  "B01001C_001", # aian
+                                  "B01001D_001", # asian
+                                  "B01001E_001", # nhpi
+                                  "B01001F_001", # other
+                                  "B01001G_001", # tom
+                                  "B05010_002", # below 1.00 poverty line
+                                  "B10010_001", # median income (total), tract
+                                  "B19083_001", # gini
+                                  "C24050_001", # total employed 16-64
+                                  "C24050_002", #Agriculture, forestry, fishing and hunting, and mining
+                                  "C24050_003", #Construction
+                                  "C24050_004", #Manufacturing
+                                  "C24050_005", #Wholesale trade
+                                  "C24050_006", #Retail trade
+                                  "C24050_007", #Transportation and warehousing, and utilities
+                                  "C24050_008", #Information
+                                  "C24050_009", #Finance and insurance, and real estate, and rental and leasing
+                                  "C24050_010", #Professional, scientific, and management, and administrative, and waste management services
+                                  "C24050_011", #Educational services, and health care and social assistance
+                                  "C24050_012", #Arts, entertainment, and recreation, and accommodation and food services
+                                  "C24050_013", #Other services, except public administration
+                                  "C24050_014"), #Public administration),
+                    state = i,
+                    geometry = TRUE,
+                    year = 2021)
+    z_st <- z_st |>
+      spread(variable, estimate) |>
+      group_by(GEOID) |>
+      fill(B01001_001, B01001H_001, B01001I_001, B01001B_001, 
+           B01001C_001, B01001D_001, B01001E_001, B01001F_001, 
+           B01001G_001, B05010_002, B10010_001, 
+           B19083_001, C24050_001, C24050_002, C24050_003, 
+           C24050_004, C24050_005, C24050_006, C24050_007, 
+           C24050_008, C24050_009, C24050_010, C24050_011, 
+           C24050_012, C24050_013, C24050_014) |>
+      rename(total = B01001_001, # total population
+             white = B01001H_001, # White, non-hispanic
+             hisp = B01001I_001, # hispanic or latino
+             black = B01001B_001, # black
+             aian = B01001C_001, # aian
+             asian = B01001D_001, # asian
+             nhpi = B01001E_001, # nhpi
+             other = B01001F_001, # other
+             tom = B01001G_001, # tom
+             below_pov = B05010_002,# below 1.00 poverty line
+             mhhi = B10010_001, # median income (total), tract
+             gini = B19083_001,# gini
+             total_employed = C24050_001,# total employed 16-64
+             ind_ag_etc = C24050_002,#Agriculture, forestry, fishing and hunting, and mining
+             ind_constr = C24050_003,#Construction
+             ind_manu = C24050_004,#Manufacturing
+             ind_wholesale = C24050_005,#Wholesale trade
+             ind_retail = C24050_006,#Retail trade
+             ind_transport_etc = C24050_007,#Transportation and warehousing, and utilities
+             ind_information = C24050_008,#Information
+             ind_finance_etc = C24050_009,#Finance and insurance, and real estate, and rental and leasing
+             ind_professional_etc = C24050_010,#Professional, scientific, and management, and administrative, and waste management services
+             ind_ed_health_social = C24050_011,#Educational services, and health care and social assistance
+             ind_rec_etc = C24050_012,#Arts, entertainment, and recreation, and accommodation and food services
+             ind_services = C24050_013,#Other services, except public administration
+             ind_public_adm = C24050_014) |> #Public administration) 
+      mutate(white = white / total) |>
+      mutate(hisp = hisp / total) |>
+      mutate(black = black / total) |>
+      mutate(aian = aian / total) |>
+      mutate(asian = asian / total) |>
+      mutate(nhpi = nhpi / total) |>
+      mutate(other = other / total) |>
+      mutate(tom = tom / total) |>
+      mutate(below_pov = below_pov / total) |>
+      mutate(ind_ag_etc = ind_ag_etc / total_employed) |>
+      mutate(ind_constr = ind_constr / total_employed) |>
+      mutate(ind_manu = ind_manu / total_employed) |>
+      mutate(ind_wholesale = ind_wholesale / total_employed) |>
+      mutate(ind_retail = ind_retail / total_employed) |>
+      mutate(ind_transport_etc = ind_transport_etc / total_employed) |>
+      mutate(ind_information = ind_information / total_employed) |>
+      mutate(ind_finance_etc = ind_finance_etc / total_employed) |>
+      mutate(ind_professional_etc = ind_professional_etc / total_employed) |>
+      mutate(ind_ed_health_social = ind_ed_health_social / total_employed) |>
+      mutate(ind_rec_etc = ind_rec_etc / total_employed) |>
+      mutate(ind_services = ind_services / total_employed) |>
+      mutate(ind_public_adm = ind_public_adm / total_employed) |>
+      drop_na() 
+    st_write(z_st, paste0("/Users/brenna/Documents/School/PHS 7050/final project/data/acs_", i, ".shp")) 
+    }
+}
+
+get_all_states(ST)
+
+acs <- map(list.files("/Users/brenna/Documents/School/PHS 7050/final project/data", full.names = T, pattern = "\\.shp$"), st_read) %>%
+  bind_rows()
+
+```
+
+```{r}
+summary(acs)
+
+
+comp <- fread("/Users/brenna/Downloads/ECHO_EXPORTER.csv")
+
+comp$inspected <- ifelse(is.na(comp$CAA_EVALUATION_COUNT), 0, comp$CAA_EVALUATION_COUNT)
+caa_eval <- comp[which(comp$inspected > 0), ]
+
+caa_eval$caa_violations <- ifelse(is.na(caa_eval$CAA_FORMAL_ACTION_COUNT), 0, 
+                                  caa_eval$CAA_FORMAL_ACTION_COUNT)
+caa_eval
+
+names(caa_eval) <- tolower(names(caa_eval))
+
+caa_eval$industry_naics <- substr(caa_eval$caa_naics, 0, 2)
+
+sort(unique(as.numeric(caa_eval$industry_naics)))
+
+caa_eval$industry_def <- case_when(caa_eval$industry_naics == "11" ~ "agriculture, forestry, fishing and hunting",
+                                   caa_eval$industry_naics == "23" ~ "construction",
+                                   caa_eval$industry_naics == "21" ~ "mining, quarrying, and oil and gas extraction",
+                                   caa_eval$industry_naics %in% c("31", "32", "33") ~ "manufacturing",
+                                   caa_eval$industry_naics == "42" ~ "wholesale trade",
+                                   caa_eval$industry_naics %in% c("44", "45") ~ "retail trade",
+                                   caa_eval$industry_naics %in% c("48", "49") ~ "transportation and warehousing",
+                                   caa_eval$industry_naics == "22" ~ "utilities",
+                                   caa_eval$industry_naics == "51" ~ "information",
+                                   caa_eval$industry_naics == "52" ~ "finance and insurance",
+                                   caa_eval$industry_naics == "53" ~ "real estate and rental and leasing",
+                                   caa_eval$industry_naics == "54" ~ "professional, scientific and technical services",
+                                   caa_eval$industry_naics == "55" ~ "management of companies and enterprises",
+                                   caa_eval$industry_naics == "56" ~ "administrative and support and waste management and remediation services",
+                                   caa_eval$industry_naics == "61" ~ "educational services",
+                                   caa_eval$industry_naics == "62" ~ "health care and social assistance",
+                                   caa_eval$industry_naics == "71" ~ "arts, entertainment and recreation",
+                                   caa_eval$industry_naics == "72" ~ "accommodation and food services",
+                                   caa_eval$industry_naics == "81" ~ "other services (except public admin)",
+                                   caa_eval$industry_naics == "92" ~ "public administration",
+                                   caa_eval$industry_naics == "99" ~ "nonclassifiable")
+
+caa_eval$industry_sector <- case_when(caa_eval$industry_def %in% c("agriculture, forestry, fishing and hunting",
+                                                                   "mining, quarrying, and oil and gas extraction") ~
+                                        "natural resources and mining",
+                                      caa_eval$industry_def %in% c("construction") ~
+                                        "construction",
+                                      caa_eval$industry_def %in% c("manufacturing") ~
+                                        "manufacturing",
+                                      caa_eval$industry_def %in% c("wholesale trade", 
+                                                                   "retail trade",
+                                                                   "transportation and warehousing",
+                                                                   "utilities") ~
+                                        "trade, transportation and utilities",
+                                      caa_eval$industry_def %in% c("finance and insurance",
+                                                                   "real estate and rental and leasing") ~
+                                        "financial activities",
+                                      caa_eval$industry_def %in% c("professional, scientific and technical services",
+                                                                   "management of companies and enterprises",
+                                                                   "administrative and support and waste management and remediation services") ~
+                                        "professional and business services",
+                                      caa_eval$industry_def %in% c("educational services",
+                                                                   "health care and social assistance") ~
+                                        "education and health services",
+                                      caa_eval$industry_def %in% c("arts, entertainment and recreation",
+                                                                   "accommodation and food services") ~
+                                        "leisure and hospitality",
+                                      caa_eval$industry_def %in% c("information") ~
+                                        "information",
+                                      caa_eval$industry_def %in% c("public administration") ~
+                                        "public administration",
+                                      caa_eval$industry_def %in% c("other services (except public admin)") ~
+                                        "other services (except public admin)",
+                                      caa_eval$industry_def %in% c("nonclassifiable") ~
+                                        "nonclassifiable")
+
+
+table(caa_eval$industry_sector)
+names(caa_eval)
+
+aggregate(caa_eval$caa_violations, by = list(caa_eval$industry_sector), FUN = mean)
+aggregate(caa_eval$caa_violations, by = list(caa_eval$industry_sector), FUN = sd)
+aggregate(caa_eval$caa_violations, by = list(caa_eval$industry_sector), FUN = max)
+
+ggplot(caa_eval, aes(caa_violations, fill = industry_sector)) + 
+  geom_histogram(binwidth = 1) + 
+  facet_grid(industry_sector ~ 
+    ., margins = TRUE, scales = "free")
+
+caa_eval <- caa_eval[which(!caa_eval$fac_state %in% c("VI", "PR", "GU")), ]
+
+m1 <- glmer.nb(caa_violations ~ (1|fac_state), data = caa_eval)
+
+
+summary(m1 <- glmer.nb(caa_violations ~ (1|fac_state), data = caa_eval))
+summary(m1)
+str(m1)
+extractAIC(m1)
+extractAIC(glm.nb(caa_violations ~ 1, data = caa_eval))
+
+length(m1@resp$wtres)
+
+
+caa_eval$res <- residuals(m1)
+
+library(ggpubr)
+library(viridis)
+
+caa_eval_cont$wt_res <- residuals(m1) #m1@resp$wtres
+names(caa_eval)
+
+caa_eval_contiguous <- caa_eval[which(!caa_eval$fac_state %in% c("HI", "AK")), ]
+
+ggscatter(data = caa_eval_contiguous, x = "fac_long", y = "fac_lat", color = "res",
+          size = 0.75) + #, palette = "viridis")
+  gradient_color("Spectral")
+
+m1@resp$aic
+summary(glm.nb(caa_violations ~ 1, data = caa_eval))
+
+ozone.dists <- as.matrix(dist(cbind(caa_eval_contiguous$fac_long,
+                                    caa_eval_contiguous$fac_lat)))
+
+ozone.dists.inv <- 1/ozone.dists
+diag(ozone.dists.inv) <- 0
+
+install.packages("ape")
+library(ape)
+Moran.I(caa_eval_contiguous$res, ozone.dists.inv)
+
+
+```
+
