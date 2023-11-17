@@ -2,7 +2,7 @@
 library(INLA)
 library(spdep)
 library(spatialreg)
-
+library(RColorBrewer)
 
 caa_contiguous <- caa_eval[which(!caa_eval$fac_state %in% c("AK", "HI",
                                                              "PR", "VI")), ]
@@ -173,10 +173,12 @@ system.time(res <- inla(formula,
 summary(res)
 
 # re for ind, no spatial aic: 49100.46, dic: 54276.68
+# re for ind, space      aic: 39348.86, dic: 39775.68
 
 #local.plot.result(res)
 
-res$summary.random
+res$summary.random$ind_b
+res$summary.random$ind_p
 
 results <- round(res$summary.fixed, 2)
 results$cred <- case_when(results$`0.025quant` > 0 & results$`0.975quant` > 0 ~ "+",
@@ -223,7 +225,6 @@ tm_shape(z_st, proj = aea) +
 
 
 caa_contiguous$y_hat_b <- res$summary.linear.predictor$mean[1:37775]
-ufo_inla_rr$summary.fitted.values[, "mean"]
 caa_contiguous$fitted <- res$summary.fitted.values$mean[1:37775]
 caa_contiguous$fitted_p <- res$summary.fitted.values$mean[37776:75550]
 
@@ -290,56 +291,94 @@ tm_shape(z_st, proj = aea) +
 caa_sf$fitted_p_log <- log(caa_sf$fitted_p + 1)
 summary(caa_sf$fitted_p_exp)
 
+hi <- caa_sf[which(caa_sf$fitted > 0.6), ]
+c(hi$fac_name, hi$fac_state)
+table(hi$industry_sector)
+
+huntsman <- caa_contiguous |>
+  filter(grepl("HUNTSMAN", fac_name))
+
 plot(hurdle_dat$re_b)
 
 summary(res$summary.random$id_space_nb)
 
+tx <- caa_contiguous |>
+  filter(fac_state == "TX")
 
-dlist <- spdep::nbdists(nb.gab, xy)
-listw.d1 <- spdep::nb2listw(nb.gab, style = "W", zero.policy = TRUE, glist=dlist)
-dlist <- lapply(dlist, function(x) 1/x)
-dlist <- lapply(dlist, function(x) 1/x^2)
-listw.d2 <- spdep::nb2listw(nb.gab, style = "W", zero.policy = TRUE, glist=dlist)
-
-#caa_contiguous$inspected <- ifelse(is.na(caa_contiguous$inspected), 0, 
-#                                    caa_contiguous$inspected)
-
-spdep::moran.test(caa_contiguous$caa_violations, listw.gab, zero.policy = TRUE) # neighbors
-spdep::moran.test(caa_contiguous$caa_violations, listw.d1, zero.policy = TRUE) # inverse distance weights
-spdep::moran.test(caa_contiguous$caa_violations, listw.d2, zero.policy = TRUE) # inverse squared distance weights
-
-#model.lm <- nlme::gls(caa_violations ~ 1, data = caa_contiguous, method = "REML")
-#semivario <- nlme::Variogram(model.lm)#, form = ~x  + y, resType = "normalized")
-
-ggplot(data = semivario, aes(x = dist, y = variog)) + 
-  geom_point() + 
-  geom_smooth(se=FALSE) +
-  geom_hline(yintercept=1) + 
-  ylim(c(0, 2.5)) + 
-  xlab("Distance") + 
-  ylab("Semivariance")
-
-inla()
+table(tx$caa_compliance_status)
+tx$y_hat_b_t <- exp(tx$y_hat_b) / (1 + exp(tx$y_hat_b))
+aggregate(tx$y_hat_b_t, by = list(tx$caa_compliance_status), FUN = mean)
 
 
-glmbase <- glm(c(caa_eval$inspected) ~ 1, family = "binomial")
-names(caa_contiguous)
-system.time(errorsarlm(caa_violations ~ 1, data = caa_contiguous, listw = listw.gab,
-                       etype = "error", method="eigen", Durbin = FALSE)
-)
-summary(listw.gab$neighbours)
-require("spdep", quietly=TRUE)
-data(hopkins, package="spData")
-hopkins_part <- hopkins[21:36,36:21]
-hopkins_part[which(hopkins_part > 0, arr.ind=TRUE)] <- 1
-hopkins.rook.nb <- spdep::cell2nb(16, 16, type="rook")
-glmbase <- glm(c(hopkins_part) ~ 1, family="binomial")
-lw <- spdep::nb2listw(hopkins.rook.nb, style="B")
-set.seed(123)
-system.time(MEbinom1 <- ME(c(hopkins_part) ~ 1, family="binomial",
-                           listw=lw, alpha=0.05, verbose=TRUE, nsim=49))
-summary(MEbinom1)
+ca <- caa_contiguous |>
+  filter(fac_state == "CA")
+ca$y_hat_b_t <- exp(ca$y_hat_b) / (1 + exp(ca$y_hat_b))
+aggregate(ca$y_hat_b_t, by = list(ca$caa_compliance_status), FUN = mean)
 
-glmME <- glm(c(hopkins_part) ~ 1 + fitted(MEbinom1), family="binomial")
-#anova(glmME, test="Chisq")
-coef(summary(glmME))
+table(ca$caa_compliance_status)
+head(tx)
+
+table(caa_sf$industry_sector)
+caa_sf$industry_sector_simple <- case_when(caa_sf$industry_sector == "manufacturing" ~ "manufacturing",
+                                           caa_sf$industry_sector == "natural resources and mining" ~ "natural resources and mining",
+                                           caa_sf$industry_sector == "trade, transportation and utilities" ~ "trade, transportation and utilities",
+                                           caa_sf$industry_sector %in% c("construction",
+                                                                         "education and health services",
+                                                                         "financial activities",
+                                                                         "information",
+                                                                         "leisure and hospitality",
+                                                                         "nonclassifiable",
+                                                                         "other services (except public admin)",
+                                                                         "professional and business services",
+                                                                         "public administration") ~ "other")
+# map of industry
+tm_shape(z_st, proj = aea) +
+  tm_polygons(col = "white", alpha = 0.5, lwd = 0.5) +
+  tm_shape(caa_sf, proj = aea) +
+  tm_dots(col = "industry_sector_simple", palette = "Dark2", alpha = 0.6, size = 0.05) + #, 
+  #breaks = seq(0, 1, by = 0.1)) +
+  tm_layout(#aes.palette = list(seq = "-RdYlGn"), 
+    title = "Industry", 
+    title.position = c(0.65, 0.95))
+
+table(caa_contiguous$caa_compliance_status, caa_contiguous$fac_state)
+aggregate(caa_contiguous$caa_compliance_status,
+          by = list(caa_contiguous$fac_state), FUN = mean)
+
+caa_contiguous$caa_compliance_status_simple <- case_when(caa_contiguous$caa_compliance_status %in% 
+                                                           c("Violation Addressed; EPA Has Lead Enforcement",
+                                                             "Violation Unaddressed; EPA Has Lead Enforcement") ~
+                                                           "epa lead enforcement",
+                                                         caa_contiguous$caa_compliance_status %in% 
+                                                           c("Violation Addressed; Local Has Lead Enforcement",
+                                                             "Violation Unaddressed; Local Has Lead Enforcement") ~
+                                                           "local lead enforcement",
+                                                         caa_contiguous$caa_compliance_status %in% 
+                                                           c("Violation Addressed; State Has Lead Enforcement",
+                                                             "Violation Unaddressed; State Has Lead Enforcement") ~
+                                                           "state lead enforcement",
+                                                         caa_contiguous$caa_compliance_status %in% 
+                                                           c("Violation Identified",
+                                                             "Violation w/in 1 Year",
+                                                             "Violation-Unresolved") ~
+                                                           "no lead enforcement",
+                                                         caa_contiguous$caa_compliance_status %in% 
+                                                           c("No Violation Identified") ~
+                                                           "no violation")
+
+table(caa_contiguous$caa_compliance_status_simple)
+
+caa_contiguous$caa_compliance_status_simple <- relevel(as.factor(caa_contiguous$caa_compliance_status_simple),
+                                                       ref = "no violation")
+
+summary(inla(caa_violations ~ caa_compliance_status_simple, 
+             data = caa_contiguous, family = "poisson"))
+
+aggregate(caa_contiguous$caa_violations, by = list(caa_contiguous$caa_compliance_status_simple), FUN = mean)
+table(caa_contiguous$caa_compliance_status_simple, caa_contiguous$fac_state,
+      caa_contiguous$caa_violations_bin)
+
+head(caa_contiguous)
+
+tail(caa_contiguous$fec_case_ids)
+
