@@ -4,8 +4,15 @@ library(spdep)
 library(spatialreg)
 library(RColorBrewer)
 
+caa_eval <- read.csv("caa_eval.csv")
+
 caa_contiguous <- caa_eval[which(!caa_eval$fac_state %in% c("AK", "HI",
-                                                             "PR", "VI")), ]
+                                                            "PR", "VI")), ]
+# check <- check[which(!check$fac_state %in% c("AK", "HI",
+#                                                       "PR", "VI")), ]
+# 
+# caa_contiguous <- merge(caa_eval, check, by = c("registry_id", "fac_name")) |>
+#   filter(!fac_state.x %in% c("AK", "HI", "PR", "VI"))
 
 xy <- data.matrix(caa_contiguous[, c("fac_long", "fac_lat")])
 
@@ -20,12 +27,6 @@ nb2INLA("graph.adj", nb.gab)
 g <- inla.read.graph(filename = "graph.adj")
 
 caa_contiguous$id_area <- 1:nrow(caa_contiguous)
-caa_contiguous$id_area_2 <- 1:nrow(caa_contiguous)
-
-table(caa_contiguous$caa_violations == 0)
-
-x_his_z_hi <- c(x_his_hi, nothing1)
-
 
 caa_contiguous$caa_violations_bin <- ifelse(caa_contiguous$caa_violations == 0,
                                             0, 1)
@@ -35,157 +36,266 @@ n = nrow(caa_contiguous)
 # outcome matrix
 nothing1 <- rep(NA, n)
 nothing2 <- rep(NA, n)
-summary(nb)
 
-b = as.vector(caa_contiguous$caa_violations_bin == 1)
-nb = ifelse(b == 1, caa_contiguous$caa_violations, NA)
+b = as.vector(caa_contiguous$caa_violations_bin == 1) #ifelse(caa_contiguous$caa_violations == 0, 0, 1) #
+p = ifelse(b == 1, caa_contiguous$caa_violations, NA)
 
 bNA = as.vector(c(b, nothing1))
-nbNA = as.vector(c(nothing2, nb))
+pNA = as.vector(c(nothing2, p))
 
-outcome.matrix <- matrix(c(bNA, nbNA), ncol = 2)
-summary(outcome.matrix)
+outcome.matrix <- matrix(c(bNA, pNA), ncol = 2)
 
 # intercept vectors
 mu_b <- c(rep(1, n), nothing1) # Binomial 
-mu_nb <- c(nothing2, rep(1,  n)) # Gamma 
+mu_p <- c(nothing2, rep(1,  n)) # pois 
 
 # spatial error terms (for structured and unstructured error)
-id_space <- caa_contiguous$id_area
+id_space <- 1:nrow(caa_contiguous)
 
 id_space_b <- c(id_space, nothing1) # Binomial
-id_space_nb <- c(nothing2, id_space) # Gamma
+id_space_p <- c(nothing2, id_space) # Gamma
 id_space_b2 <- c(id_space, nothing1) # Binomial
-id_space_nb2 <- c(nothing2, id_space) # Gamma
+id_space_p2 <- c(nothing2, id_space) # Gamma
 
 # covariates
 # use sf, assign census tract to facility; population, race, poverty, MHHI
+typeof(caa_contiguous$sector_naics)
 
-table(caa_contiguous$industry_sector)
-mean(caa_contiguous$caa_violations)
-aggregate(caa_contiguous$caa_violations, by = list(caa_contiguous$industry_sector), FUN = mean)
+# sector
+caa_contiguous$sector_naics <- ifelse(caa_contiguous$sector_naics %in% 
+                                        c("31", "32", "33"), "31", 
+                                      caa_contiguous$sector_naics) # manufacturing
+caa_contiguous$sector_naics <- ifelse(caa_contiguous$sector_naics %in% 
+                                        c("44", "45"), "44", 
+                                      caa_contiguous$sector_naics) # retail trade
+caa_contiguous$sector_naics <- ifelse(caa_contiguous$sector_naics %in% 
+                                        c("48", "49"), "48", 
+                                      caa_contiguous$sector_naics) # warehousing
+sec_b <- c(caa_contiguous$sector_naics, nothing1)
+sec_p <- c(nothing2, caa_contiguous$sector_naics)
 
 # industry
-ind_constr <- ifelse(caa_contiguous$industry_sector == "construction", 1, 0)
-ind_edh <- ifelse(caa_contiguous$industry_sector == "education and health services", 1, 0)
-ind_fin <- ifelse(caa_contiguous$industry_sector == "financial activities", 1, 0)
-ind_info <- ifelse(caa_contiguous$industry_sector == "information", 1, 0)
-ind_hosp <- ifelse(caa_contiguous$industry_sector == "leisure and hospitality", 1, 0)
-ind_manu <- ifelse(caa_contiguous$industry_sector == "manufacturing", 1, 0)
-ind_mine <- ifelse(caa_contiguous$industry_sector == "natural resources and mining", 1, 0)
-ind_na <- ifelse(caa_contiguous$industry_sector == "nonclassifiable", 1, 0)
-ind_other <- ifelse(caa_contiguous$industry_sector == "other services (except public admin)", 1, 0)
-ind_prof <- ifelse(caa_contiguous$industry_sector == "professional and business services", 1, 0)
-ind_pub <- ifelse(caa_contiguous$industry_sector == "public administration", 1, 0)
-ind_trans <- ifelse(caa_contiguous$industry_sector == "trade, transportation and utilities", 1, 0)
-
-ind_constr_b <- c(ind_constr, nothing1)
-ind_constr_nb <- c(nothing2, ind_constr)
-ind_edh_b <- c(ind_edh, nothing1)
-ind_edh_nb <- c(nothing2, ind_edh)
-ind_fin_b <- c(ind_fin, nothing1)
-ind_fin_nb <- c(nothing2, ind_fin)
-ind_info_b <- c(ind_info, nothing1)
-ind_info_nb <- c(nothing2, ind_info)
-ind_hosp_b <- c(ind_hosp, nothing1)
-ind_hosp_nb <- c(nothing2, ind_hosp)
-ind_manu_b <- c(ind_manu, nothing1)
-ind_manu_nb <- c(nothing2, ind_manu)
-ind_mine_b <- c(ind_mine, nothing1)
-ind_mine_nb <- c(nothing2, ind_mine)
-ind_na_b <- c(ind_na, nothing1)
-ind_na_nb <- c(nothing2, ind_na)
-ind_other_b <- c(ind_other, nothing1)
-ind_other_nb <- c(nothing2, ind_other)
-ind_prof_b <- c(ind_prof, nothing1) # referent
-ind_prof_nb <- c(nothing2, ind_prof) # referent
-ind_pub_b <- c(ind_pub, nothing1)
-ind_pub_nb <- c(nothing2, ind_pub)
-ind_trans_b <- c(ind_trans, nothing1)
-ind_trans_nb <- c(nothing2, ind_trans)
-
-ind_b <- c(caa_contiguous$industry_sector, nothing1)
-ind_p <- c(nothing2, caa_contiguous$industry_sector)
+ind_b <- c(caa_contiguous$industry_naics, nothing1)
+ind_p <- c(nothing2, caa_contiguous$industry_naics)
 
 # state
-table(caa_contiguous$fac_state)
-
 state_b <- c(caa_contiguous$fac_state, nothing1)
 state_p <- c(nothing2, caa_contiguous$fac_state)
 
-
 # put it all together
 hurdle_dat <- list(outcome.matrix = outcome.matrix, 
-                   id_space_b = id_space_b, id_space_nb = id_space_nb,
-                   id_space_b2 = id_space_b2, id_space_nb2 = id_space_nb2,
+                   mu_b = mu_b, mu_p = mu_p, 
+                   id_space_b = id_space_b, id_space_p = id_space_p,
+                   id_space_b2 = id_space_b2, id_space_p2 = id_space_p2,
+                   sec_b = sec_b,  sec_p = sec_p, 
+                   ind_b = ind_b,  ind_p = ind_p,
                    state_b = state_b, state_p = state_p,
-                   mu_b = mu_b, mu_nb = mu_nb,
-                   ind_constr_b = ind_constr_b,
-                   ind_constr_nb = ind_constr_nb,
-                   ind_edh_b = ind_edh_b,
-                   ind_edh_nb = ind_edh_nb,
-                   ind_fin_b = ind_fin_b,
-                   ind_fin_nb = ind_fin_nb,
-                   ind_info_b = ind_info_b,
-                   ind_info_nb = ind_info_nb,
-                   ind_hosp_b = ind_hosp_b,
-                   ind_hosp_nb = ind_hosp_nb,
-                   ind_manu_b = ind_manu_b,
-                   ind_manu_nb = ind_manu_nb,
-                   ind_mine_b = ind_mine_b,
-                   ind_mine_nb = ind_mine_nb,
-                   ind_na_b = ind_na_b,
-                   ind_na_nb = ind_na_nb,
-                   ind_other_b = ind_other_b,
-                   ind_other_nb = ind_other_nb,
-                   ind_prof_b = ind_prof_b,
-                   ind_prof_nb = ind_prof_nb,
-                   ind_pub_b = ind_pub_b,
-                   ind_pub_nb = ind_pub_nb,
-                   ind_trans_b = ind_trans_b,
-                   ind_trans_nb = ind_trans_nb,
-                   ind_b = ind_b,
-                   ind_p = ind_p)
+                   sec_b_2 = sec_b,  sec_p_2 = sec_p)
 
 
-formula <- outcome.matrix ~ mu_b + mu_nb + 
-  #f(state_b, model = "iid") + f(state_p, model = "iid") + #industry_sector + #f(fac_state) +
-  # ind_constr_b + ind_constr_nb + ind_edh_b + ind_edh_nb +
-  # ind_fin_b + ind_fin_nb + ind_info_b + ind_info_nb +
-  # ind_hosp_b + ind_hosp_nb + ind_manu_b + ind_manu_nb +
-  # ind_mine_b + ind_mine_nb + ind_na_b + ind_na_nb +
-  # ind_other_b + ind_other_nb + ind_prof_b + ind_prof_nb +
-  # ind_trans_b + ind_trans_nb + #ind_pub_b+ ind_pub_nb + 
-  f(ind_b, model = "iid") + f(ind_p, model = "iid") +
+formula <- outcome.matrix ~ mu_b + mu_p + 
+  f(state_b) + f(state_p) + #industry_sector + #f(fac_state) +, model = "iid")
+  f(sec_b) + f(sec_p) +
   f(id_space_b, model = "bym2", graph = g) +
-  f(id_space_b2, model = "iid") +
-  f(id_space_nb, model = "bym2", graph = g) +
-  f(id_space_nb2, model = "iid") - 1
+  f(id_space_b2, model = "iid") + - 1
+  f(id_space_p, model = "bym2", graph = g) +
+  f(id_space_p2, model = "iid") - 1
 
 system.time(res <- inla(formula,
             data = hurdle_dat, #caa_contiguous,
             #E = E, 
             family = c("binomial", "poisson"),
             control.inla = list(int.strategy = "eb"),
-            control.predictor = list(compute = TRUE),
-            control.compute = list(dic = TRUE, waic = TRUE))
-)
-summary(res)
+            control.predictor = list(link = 1, compute = TRUE),
+            control.compute = list(dic = TRUE, waic = TRUE)))
 
-# re for ind, no spatial aic: 49100.46, dic: 54276.68
-# re for ind, space      aic: 39348.86, dic: 39775.68
+summary(res)
+# re: state, space, sector:   39168
+# re: space, sector:          39260.32
+# re: space, sector:          45105.52
+# re: sp, sec fe: sec         45249.93
+# re: state, space, sector    42083.64
+
+caa_contiguous$residual_b <- res$residuals$deviance.residuals[1:37775]
+caa_contiguous$residual_p <- res$residuals$deviance.residuals[37776:75550]
+
+caa_contiguous_sf <- st_as_sf(caa_contiguous, coords = c("fac_long", "fac_lat"),
+                              crs = 4326, agr = "constant")
+listw.gab <- spdep::nb2listw(nb.gab, zero.policy = TRUE)
+
+spdep::moran.test(caa_contiguous_sf$residual_b, listw.gab, zero.policy = TRUE)
+
+caa_contiguous_sf_pois <- caa_contiguous_sf[which(caa_contiguous_sf$caa_violations > 0), ]
+caa_contiguous_sf_pois$caa_violations_log <- log(caa_contiguous_sf_pois$caa_violations)
+summary(caa_contiguous_sf_pois$caa_violations)
+var(caa_contiguous_sf_pois$caa_violations)
+
+prop.table(table(caa_contiguous_sf_pois$caa_violations == 1))
+prop.table(table(caa_contiguous_sf_pois$caa_violations == 2))
+prop.table(table(caa_contiguous_sf_pois$caa_violations == 3))
+prop.table(table(caa_contiguous_sf_pois$caa_violations == 4))
+prop.table(table(caa_contiguous_sf_pois$caa_violations >= 5))
+
+hist(caa_contiguous_sf_pois$caa_violations_log)
+caa_contiguous_sf_pois[which(caa_contiguous_sf_pois$caa_violations > 100), ]
+
+tm_shape(states, proj = aea) +
+  tm_polygons(col = "white", border.col = "gray10") +
+  tm_shape(caa_contiguous_sf_pois) +
+  tm_dots(col = "caa_violations_log", style = "cont", palette = "Reds", legend.show = FALSE)
+
+# re for ind, no spatial waic: 49100.46, dic: 54276.68
+# re for ind, space      waic: 39348.86, dic: 39775.68
 
 #local.plot.result(res)
 
-res$summary.random$ind_b
-res$summary.random$ind_p
+predict()
 
-results <- round(res$summary.fixed, 2)
+aggregate(caa_contiguous$caa_violations > 0, by = list(caa_contiguous$industry_sector), FUN = mean)
+aggregate(caa_contiguous$caa_violations, by = list(caa_contiguous$industry_sector), FUN = mean)
+
+# results <- round(res$summary.fixed, 2)
+
 results$cred <- case_when(results$`0.025quant` > 0 & results$`0.975quant` > 0 ~ "+",
                           results$`0.025quant` < 0 & results$`0.975quant` < 0 ~ "-",
                           results$`0.025quant` >= 0 & results$`0.975quant` <= 0 ~ ".",
                           results$`0.025quant` <= 0 & results$`0.975quant` >= 0 ~ ".")
-results
+
+
+sector_bin <- cbind(res$summary.random$sec_b$ID, 
+                    round(res$summary.random$sec_b[, c("mean", "sd",
+                                                       "0.025quant", "0.5quant",
+                                                       "0.975quant", "mode")], 2))
+sector_bin$cred <- case_when(sector_bin$`0.025quant` > 0 & sector_bin$`0.975quant` > 0 ~ "+",
+                             sector_bin$`0.025quant` < 0 & sector_bin$`0.975quant` < 0 ~ "-",
+                             sector_bin$`0.025quant` >= 0 & sector_bin$`0.975quant` <= 0 ~ ".",
+                             sector_bin$`0.025quant` <= 0 & sector_bin$`0.975quant` >= 0 ~ ".")
+
+sector_poi <- cbind(res$summary.random$sec_p$ID, 
+                    round(res$summary.random$sec_p[, c("mean", "sd",
+                                                       "0.025quant", "0.5quant",
+                                                       "0.975quant", "mode")], 2))
+sector_poi$cred <- case_when(sector_poi$`0.025quant` > 0 & sector_poi$`0.975quant` > 0 ~ "+",
+                             sector_poi$`0.025quant` < 0 & sector_poi$`0.975quant` < 0 ~ "-",
+                             sector_poi$`0.025quant` >= 0 & sector_poi$`0.975quant` <= 0 ~ ".",
+                             sector_poi$`0.025quant` <= 0 & sector_poi$`0.975quant` >= 0 ~ ".")
+
+creds_bin <- data.frame()
+creds_poi <- data.frame()
+
+for(i in 1:21) {
+  # binomial
+  if(sector_bin[i, "mean"] < 0) {
+    h_cred <- inla.pmarginal(0.99, res$marginals.random$sec_b[[i]])
+    m_cred <- inla.pmarginal(0.89, res$marginals.random$sec_b[[i]])
+    w_cred <- inla.pmarginal(0.67, res$marginals.random$sec_b[[i]])
+  }
+  else{
+    h_cred <- 1 - inla.pmarginal(0.99, res$marginals.random$sec_b[[i]])
+    m_cred <- 1 - inla.pmarginal(0.89, res$marginals.random$sec_b[[i]])
+    w_cred <- 1 - inla.pmarginal(0.67, res$marginals.random$sec_b[[i]])
+  }
+  creds_bin <- rbind(creds_bin, c(res$summary.random$sec_b$ID[i],
+                                  round(h_cred, 3), 
+                                  round(m_cred, 3), 
+                                  round(w_cred, 3)))
+  # poisson
+  if(sector_poi[i, "mean"] < 0) {
+    h_cred <- inla.pmarginal(0.99, res$marginals.random$sec_p[[i]])
+    m_cred <- inla.pmarginal(0.89, res$marginals.random$sec_p[[i]])
+    w_cred <- inla.pmarginal(0.67, res$marginals.random$sec_p[[i]])
+  }
+  else{
+    h_cred <- 1 - inla.pmarginal(0.99, res$marginals.random$sec_p[[i]])
+    m_cred <- 1 - inla.pmarginal(0.89, res$marginals.random$sec_p[[i]])
+    w_cred <- 1 - inla.pmarginal(0.67, res$marginals.random$sec_p[[i]])
+  }
+  creds_poi <- rbind(creds_poi, c(res$summary.random$sec_p$ID[i],
+                                  round(h_cred, 3), 
+                                  round(m_cred, 3), 
+                                  round(w_cred, 3)))
+}
+
+names(creds_bin) <- c("sector", "high", "moderate", "weak")
+names(creds_poi) <- c("sector", "high", "moderate", "weak")
+
+creds_bin
+creds_poi
+
+sector_bin <- sector_bin |>
+  mutate_at(c("mean", "sd",
+              "0.025quant", "0.5quant",
+              "0.975quant", "mode"), ~ round(plogis(.), 2))
+sector_poi <- sector_poi |>
+  mutate_at(c("mean", "sd",
+              "0.025quant", "0.5quant",
+              "0.975quant", "mode"), ~ round(plogis(.), 2))
+
+
+# checking for over/underdispersion
+sqrt(var(res$summary.fitted.values$mean[1:(37775 + 1)]))
+sqrt(var(caa_contiguous$caa_violations_bin))
+
+sqrt(var(res$summary.fitted.values$mean[(37775 + 1):75550]))
+sqrt(var(caa_contiguous[which(caa_contiguous$caa_violations_bin == 1), "caa_violations"]))
+
+str(res$summary.fitted.values$mean[1:(75550/2)])
+
+plot(res$residuals, res$summary.fitted.values$mean)
+
+# m <- res$internal.marginals.hyperpar[[1]] 
+# m.var <- inla.tmarginal(function(x) 1 / exp(x), m)
+# inla.zmarginal(m.var)
+
+
+library(tmap)
+library(RColorBrewer)
+caa_contiguous_sf$caa_violations_bin_tx <- ifelse(caa_contiguous_sf$caa_violations_bin == 1,
+                                                  "yes", "no")
+
+prop.table(table(caa_contiguous$caa_violations == 0))
+
+states <- st_read("/Users/brenna/Documents/School/2023 Spring, Summer/GEOG 6960/us states/states.shp")
+states <- states[which(!states$NAME %in% c("Alaska", "Hawaii", "Puerto Rico")), ]
+
+tm_shape(states, proj = aea) +
+  tm_polygons(col = "white", border.col = "gray10") +
+  tm_shape(caa_contiguous_sf) +
+  tm_dots(col = "caa_violations_bin_tx", palette = "-RdYlBu", alpha = 0.8)
+  
+count_state <- aggregate(caa_contiguous$caa_violations, by = list(caa_contiguous$fac_fips_code), FUN = sum)
+count_state$Group.1 <- str_pad(count_state$Group.1, width = 5, side = "left", pad = "0")
+
+county_shp <- st_read("/Users/brenna/Documents/School/Thesis/stream-pollution-analysis/data/counties.shp")
+county_shp <- merge(county_shp, count_state, by.x = "GEOID", by.y = "Group.1", all.y = TRUE)
+head(county_shp)
+county_shp$Violations <- county_shp$x
+county_shp$Count <- log(county_shp$Violations)
+county_shp_pois <- county_shp[which(county_shp$Count != "-Inf"), ]
+summary(county_shp_pois)
+tm_shape(county_shp_pois, proj = aea) +
+  tm_polygons(col = "Count", style = "cont", lwd = 0, palette = "BuPu")
+
+ggplot(caa_contiguous, aes(x = caa_violations)) +
+  geom_histogram(bins = 100)
+
+sector_bin
+
+
+rbind(creds, c(h_cred, m_cred, w_cred))
+
+inla.pmarginal(0.89, res$marginals.random$sec_b$index.1)
+1 - inla.pmarginal(0.99, res$marginals.random$sec_b$index.2)
+
+inla.pmarginal(0.67, res$marginals.fixed$x_bla_z)
+inla.pmarginal(0.89, res$marginals.fixed$x_bla_z)
+inla.pmarginal(0.99, res$marginals.fixed$x_bla_z)
+
+
+
+data.frame(sector_bin$ID, round(exp(sector_bin$mean), 2), sector_bin$cred)
+
+# credible: 21, 22, 23, 31, 44, 48, 51, 56, 81
 
 plot(res, plot.fixed.effects = FALSE,
      plot.random.effects = FALSE,
@@ -195,8 +305,8 @@ plot(res, plot.fixed.effects = FALSE,
 table(caa_contiguous$caa_days_last_evaluation,
       caa_contiguous$fac_state)
 
-plot(res, plot.fixed.effects = FALSE,
-     plot.random.effects = TRUE,
+plot(res, plot.fixed.effects = TRUE,
+     plot.random.effects = FALSE,
      plot.hyperparameters = FALSE,
      plot.predictor = FALSE, cex = 1.25)
 
@@ -233,6 +343,7 @@ res$summary.random
 
 caa_sf <- st_as_sf(caa_contiguous, coords = c("fac_long", "fac_lat"),
                    crs = 4326, agr = "constant")
+caa_sf
 
 library(tmap)
 aea <- "+proj=aea +lat_1=29.5 +lat_2=45.5 +lat_0=37.5 +lon_0=-96 +ellps=GRS80 +datum=NAD83"
@@ -270,6 +381,11 @@ tm_shape(z_st, proj = aea) +
   tm_dots(col = "re_nb", style = "cont", palette = "seq", alpha = 0.9) +
   tm_layout(aes.palette = list(seq = "-RdYlGn"), title = "Spatial RE, poisson", 
             title.position = c(0.6, 0.95))
+
+z_st$state <- str_sub(z_st$GEOID, start = 0, end = 2)
+
+aggregate(z_st$re_st_b, by = list(z_st$state), FUN = mean)
+
 
 tm_shape(z_st, proj = aea) +
   tm_polygons(col = "white", alpha = 0.5, lwd = 0.5) +
@@ -318,7 +434,7 @@ aggregate(ca$y_hat_b_t, by = list(ca$caa_compliance_status), FUN = mean)
 table(ca$caa_compliance_status)
 head(tx)
 
-table(caa_sf$industry_sector)
+table(caa_sf$industry_sector_simple)
 caa_sf$industry_sector_simple <- case_when(caa_sf$industry_sector == "manufacturing" ~ "manufacturing",
                                            caa_sf$industry_sector == "natural resources and mining" ~ "natural resources and mining",
                                            caa_sf$industry_sector == "trade, transportation and utilities" ~ "trade, transportation and utilities",
@@ -344,6 +460,8 @@ tm_shape(z_st, proj = aea) +
 table(caa_contiguous$caa_compliance_status, caa_contiguous$fac_state)
 aggregate(caa_contiguous$caa_compliance_status,
           by = list(caa_contiguous$fac_state), FUN = mean)
+
+max(caa_contiguous$caa_violations)
 
 caa_contiguous$caa_compliance_status_simple <- case_when(caa_contiguous$caa_compliance_status %in% 
                                                            c("Violation Addressed; EPA Has Lead Enforcement",
@@ -382,3 +500,62 @@ head(caa_contiguous)
 
 tail(caa_contiguous$fec_case_ids)
 
+dlist <- spdep::nbdists(nb.gab, xy)
+listw.d1 <- spdep::nb2listw(nb.gab, style = "W", zero.policy = TRUE, glist=dlist)
+dlist <- lapply(dlist, function(x) 1/x)
+dlist <- lapply(dlist, function(x) 1/x^2)
+listw.d2 <- spdep::nb2listw(nb.gab, style = "W", zero.policy = TRUE, glist=dlist)
+
+table(caa_contiguous$fec_case_ids != "", caa_contiguous$fac_state)
+
+head(unique(caa_contiguous$caa_3yr_compl_qtrs_history))
+
+table(caa_contiguous$caa_hpv_flag, caa_contiguous$industry_sector)
+
+aggregate(caa_contiguous$caa_days_last_evaluation, by = list(caa_contiguous$caa_violations_bin), FUN = mean)
+
+
+caa_contiguous$fac_derived_cb2010
+
+#caa_contiguous$inspected <- ifelse(is.na(caa_contiguous$inspected), 0, 
+#                                    caa_contiguous$inspected)
+
+spdep::moran.test(caa_contiguous$caa_violations, listw.gab, zero.policy = TRUE) # neighbors
+spdep::moran.test(caa_contiguous$caa_violations, listw.d1, zero.policy = TRUE) # inverse distance weights
+spdep::moran.test(caa_contiguous$caa_violations, listw.d2, zero.policy = TRUE) # inverse squared distance weights
+
+#model.lm <- nlme::gls(caa_violations ~ 1, data = caa_contiguous, method = "REML")
+#semivario <- nlme::Variogram(model.lm)#, form = ~x  + y, resType = "normalized")
+
+ggplot(data = semivario, aes(x = dist, y = variog)) + 
+  geom_point() + 
+  geom_smooth(se=FALSE) +
+  geom_hline(yintercept=1) + 
+  ylim(c(0, 2.5)) + 
+  xlab("Distance") + 
+  ylab("Semivariance")
+
+inla()
+
+
+glmbase <- glm(c(caa_eval$inspected) ~ 1, family = "binomial")
+names(caa_contiguous)
+system.time(errorsarlm(caa_violations ~ 1, data = caa_contiguous, listw = listw.gab,
+                       etype = "error", method="eigen", Durbin = FALSE)
+)
+summary(listw.gab$neighbours)
+require("spdep", quietly=TRUE)
+data(hopkins, package="spData")
+hopkins_part <- hopkins[21:36,36:21]
+hopkins_part[which(hopkins_part > 0, arr.ind=TRUE)] <- 1
+hopkins.rook.nb <- spdep::cell2nb(16, 16, type="rook")
+glmbase <- glm(c(hopkins_part) ~ 1, family="binomial")
+lw <- spdep::nb2listw(hopkins.rook.nb, style="B")
+set.seed(123)
+system.time(MEbinom1 <- ME(c(hopkins_part) ~ 1, family="binomial",
+                           listw=lw, alpha=0.05, verbose=TRUE, nsim=49))
+summary(MEbinom1)
+
+glmME <- glm(c(hopkins_part) ~ 1 + fitted(MEbinom1), family="binomial")
+#anova(glmME, test="Chisq")
+coef(summary(glmME))

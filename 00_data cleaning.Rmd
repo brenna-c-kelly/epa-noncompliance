@@ -13,13 +13,17 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ```{r}
 
-library(MASS)
+library(sf)
 library(lme4)
+library(MASS)
 library(dplyr)
 library(tidyr)
+library(purrr)
 library(ggplot2)
+library(stringr)
 library(foreign)
 library(tidycensus)
+library(data.table)
 library(RColorBrewer)
 
 ```
@@ -30,9 +34,8 @@ library(RColorBrewer)
 ```{r}
 
 # all 50 states + DC
-ST <- c(#"AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "DC", 
-        #"FL", "GA", "HI", "ID", "IL", 
-        "IN", "IA", "KS", "KY",
+ST <- c("AL", "AZ", "AR", "CA", "CO", "CT", "DE", "DC", 
+        "FL", "GA", "ID", "IL", "IN", "IA", "KS", "KY",
         "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE",
         "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK",
         "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT",
@@ -82,7 +85,7 @@ get_all_states <- function(ST) {
            B19083_001, C24050_001, C24050_002, C24050_003, 
            C24050_004, C24050_005, C24050_006, C24050_007, 
            C24050_008, C24050_009, C24050_010, C24050_011, 
-           C24050_012, C24050_013, C24050_014) |>
+           C24050_012, C24050_013, C24050_014, geometry, .direction = "updown") |>
       rename(total = B01001_001, # total population
              white = B01001H_001, # White, non-hispanic
              hisp = B01001I_001, # hispanic or latino
@@ -109,6 +112,7 @@ get_all_states <- function(ST) {
              ind_rec_etc = C24050_012,#Arts, entertainment, and recreation, and accommodation and food services
              ind_services = C24050_013,#Other services, except public administration
              ind_public_adm = C24050_014) |> #Public administration) 
+      mutate(total = total + 1) |>
       mutate(white = white / total) |>
       mutate(hisp = hisp / total) |>
       mutate(black = black / total) |>
@@ -131,36 +135,86 @@ get_all_states <- function(ST) {
       mutate(ind_rec_etc = ind_rec_etc / total_employed) |>
       mutate(ind_services = ind_services / total_employed) |>
       mutate(ind_public_adm = ind_public_adm / total_employed) |>
-      drop_na() 
+      filter(!duplicated(GEOID))
+    names(z_st) <- tolower(names(z_st))
+    z_st$state <- str_sub(z_st$geoid, start = 0, end = 2)
     st_write(z_st, paste0("/Users/brenna/Documents/School/PHS 7050/final project/data/acs_", i, ".shp")) 
     }
 }
 
+geom_only <- geom_only[0, ]
+
+for(i in ST) {
+  geom_new <- get_acs(geography = "tract",
+                       variables = c("B01001_001"),
+                       state = i,
+                       geometry = TRUE,
+                       year = 2021)
+  geom_only <- rbind(geom_only, geom_new)
+  #st_write(geom_only, paste0("/Users/brenna/Documents/School/PHS 7050/final project/geom/geom_", i, ".shp"))
+}
+
+geom_only <- map(list.files("/Users/brenna/Documents/School/PHS 7050/final project/geom", 
+                            full.names = T, pattern = "\\.shp$"), st_read) %>%
+  bind_rows()
+head(geom_only)
+
+table(st_is_empty(geom_only))
+
+no_geom <- geom_only[which(st_is_empty(geom_only)), ]
+
+
+tm_shape(geom_only, proj = aea) +
+  tm_polygons(col = "gray", lwd = 0)
+
 get_all_states(ST)
 
-acs <- map(list.files("/Users/brenna/Documents/School/PHS 7050/final project/data", full.names = T, pattern = "\\.shp$"), st_read) %>%
+acs <- map(list.files("/Users/brenna/Documents/School/PHS 7050/final project/data", 
+                      full.names = T, pattern = "\\.shp$"), st_read) %>%
   bind_rows()
+
+head(mon)
+summary(mon)
+
 
 ```
 
 ```{r}
-summary(acs)
-
 
 comp <- fread("/Users/brenna/Downloads/ECHO_EXPORTER.csv")
 
 comp$inspected <- ifelse(is.na(comp$CAA_EVALUATION_COUNT), 0, comp$CAA_EVALUATION_COUNT)
 caa_eval <- comp[which(comp$inspected > 0), ]
 
+summary(comp$CAA_EVALUATION_COUNT)
+
 caa_eval$caa_violations <- ifelse(is.na(caa_eval$CAA_FORMAL_ACTION_COUNT), 0, 
                                   caa_eval$CAA_FORMAL_ACTION_COUNT)
-caa_eval
 
 names(caa_eval) <- tolower(names(caa_eval))
 
+# caa_eval_hurdle <- caa_eval |>
+#   filter(caa_violations > 0)
+# prop.table(table(caa_eval_hurdle$caa_violations %in% c(1)))
+# 
+# summary(caa_eval[which(caa_eval$caa_violations > 0), "caa_violations"])
+# prop.table(table(caa_eval_hurdle$caa_violations > 10))
+
 caa_eval$industry_naics <- substr(caa_eval$caa_naics, 0, 2)
 
-sort(unique(as.numeric(caa_eval$industry_naics)))
+# dates <- as.data.frame(unique(caa_eval$fac_date_last_inspection))
+# names(dates) <- c("date")
+# 
+# dates$year <- substr(dates$date, 
+#                      (nchar(dates$date) - 3),
+#                      nchar(dates$date))
+# dates$year <- as.numeric(dates$year)
+# summary(dates$year)
+
+caa_eval$year <- substr(caa_eval$fac_date_last_inspection, 
+                     (nchar(caa_eval$fac_date_last_inspection) - 3),
+                     nchar(caa_eval$fac_date_last_inspection))
+
 
 caa_eval$industry_def <- case_when(caa_eval$industry_naics == "11" ~ "agriculture, forestry, fishing and hunting",
                                    caa_eval$industry_naics == "23" ~ "construction",
@@ -220,10 +274,9 @@ caa_eval$industry_sector <- case_when(caa_eval$industry_def %in% c("agriculture,
 
 
 table(caa_eval$industry_sector)
-names(caa_eval)
 
 aggregate(caa_eval$caa_violations, by = list(caa_eval$industry_sector), FUN = mean)
-aggregate(caa_eval$caa_violations, by = list(caa_eval$industry_sector), FUN = sd)
+aggregate(caa_eval$caa_violations, by = list(caa_eval$industry_sector), FUN = sum)
 aggregate(caa_eval$caa_violations, by = list(caa_eval$industry_sector), FUN = max)
 
 ggplot(caa_eval, aes(caa_violations, fill = industry_sector)) + 
@@ -233,7 +286,7 @@ ggplot(caa_eval, aes(caa_violations, fill = industry_sector)) +
 
 caa_eval <- caa_eval[which(!caa_eval$fac_state %in% c("VI", "PR", "GU")), ]
 
-m1 <- glmer.nb(caa_violations ~ (1|fac_state), data = caa_eval)
+m1 <- glmer.nb(caa_violations ~ (1 | fac_state), data = caa_eval)
 
 
 summary(m1 <- glmer.nb(caa_violations ~ (1|fac_state), data = caa_eval))
@@ -250,7 +303,7 @@ caa_eval$res <- residuals(m1)
 library(ggpubr)
 library(viridis)
 
-caa_eval_cont$wt_res <- residuals(m1) #m1@resp$wtres
+#caa_eval_cont$wt_res <- residuals(m1) #m1@resp$wtres
 names(caa_eval)
 
 caa_eval_contiguous <- caa_eval[which(!caa_eval$fac_state %in% c("HI", "AK")), ]
@@ -262,11 +315,67 @@ ggscatter(data = caa_eval_contiguous, x = "fac_long", y = "fac_lat", color = "re
 m1@resp$aic
 summary(glm.nb(caa_violations ~ 1, data = caa_eval))
 
-ozone.dists <- as.matrix(dist(cbind(caa_eval_contiguous$fac_long,
-                                    caa_eval_contiguous$fac_lat)))
+library(sf)
+library(spdep)
 
-ozone.dists.inv <- 1/ozone.dists
-diag(ozone.dists.inv) <- 0
+caa_eval_contiguous$lat_long <- paste0(caa_eval_contiguous$fac_lat, ", ", caa_eval_contiguous$fac_long)
+
+test <- caa_eval_contiguous |>
+  filter(!duplicated(lat_long))
+
+Syracuse.coords <- st_as_sf(test, coords = c("fac_long", "fac_lat"))
+Syracuse.coords <- as.data.frame(st_coordinates(st_geometry(Syracuse.coords))) |>
+  distinct()
+
+Sy3_nb <- tri2nb(Syracuse.coords)
+Sy1_lw_W <- nb2listw(Sy3_nb, style = 'W')
+
+lm1 <- localmoran(test$caa_violations, 
+                 listw = Sy1_lw_W, 
+                 alternative = "two.sided")
+
+test$zscore <- lm1[,4]
+test$pval <- lm1[,5]
+
+ggscatter(data = test, x = "fac_long", y = "fac_lat", color = "lG",
+          size = 0.5) + #, palette = "viridis")
+  gradient_color("Spectral")
+
+test$lG <- as.numeric(localG(test$caa_violations, Sy1_lw_W))
+
+
+moran.test(test$res, 
+           listw = Sy1_lw_W, 
+           alternative = "two.sided", 
+           randomisation = TRUE)
+
+moran.plot(test$caa_violations, 
+           Sy1_lw_W, 
+           labels = as.character(test$registry_id), 
+           xlab = "Log Median Value", 
+           ylab = "Lagged Log Median Value")
+
+m1 <- glmer.nb(caa_violations ~ (1 | fac_state), data = caa_eval_contiguous)
+
+library(spdep)
+library(spatialreg)
+
+col.listw <- nb2listw(Sy3_nb)
+
+col.listw <- nb2listw(Sy3_nb)
+
+col.fit1 <- lm(caa_violations ~ 1, data = test, col.listw)
+lmt <- lm.LMtests(col.fit1, col.listw, test = c("LMerr","LMlag"))
+
+col.fit2 <- lagsarlm(caa_violations ~ 1, data = test, col.listw)
+
+col.fit2 <- col.fit1
+
+summary(col.fit2)
+
+summary(lmt)
+
+
 
 install.packages("ape")
 library(ape)

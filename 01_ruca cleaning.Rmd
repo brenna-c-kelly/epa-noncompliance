@@ -1,0 +1,141 @@
+---
+title: "01 fac geography"
+author: "Brenna Kelly"
+date: "2023-11-28"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+
+library(sf)
+library(dplyr)
+library(stringr)
+
+```
+
+
+
+```{r}
+
+ruca <- read.csv("/Users/brenna/Downloads/RUCA_2010_03JUL2019.csv")
+ruca$county_fips <- str_pad(ruca$county_fips, side = "left", pad = "0", width = 5)
+ruca$tract_fips <- str_pad(ruca$tract_fips, side = "left", pad = "0", width = 11)
+
+
+st_tracts <- st_read("/Users/brenna/Documents/School/tidycensus/tract_census.shp")
+names(st_tracts) <- tolower(names(st_tracts))
+st_tracts$state <- str_sub(st_tracts$geoid, start = 0, end = 2)
+st_tracts <- st_tracts[which(!st_tracts$state %in% c("02", "15")), ]
+
+
+ruca_sf <- merge(acs, ruca, by.x = "geoid", by.y = "tract_fips", all.x = TRUE)
+summary(ruca_sf)
+
+# table(st_is_empty(acs))
+# test <- ruca_sf[which(!st_is_empty(ruca_sf)), ]
+# table(is.na(test$county_fips))
+# 
+# test$primary_ruca <- ifelse(is.na(test$primary_ruca), 11, test$primary_ruca)
+# 
+# test$missing_ruca <- ifelse(test$primary_ruca == 11, "missing", "not missing")
+
+aea <- "+proj=aea +lat_1=29.5 +lat_2=45.5 +lat_0=37.5 +lon_0=-96 +ellps=GRS80 +datum=NAD83"
+
+
+tm_shape(ruca_sf, proj = aea) +
+  tm_polygons(col = "ind_man", lwd = 0) +
+  tm_shape(caa_sf) +
+  tm_dots(col = "red", alpha = 0.5)
+
+summary(test)
+
+ruca_sf$pop_density <- as.numeric(ruca_sf$pop_density)
+
+```
+
+
+```{r}
+
+caa_contiguous <- caa_eval[which(!caa_eval$fac_state %in% c("AK", "HI",
+                                                             "PR", "VI")), ]
+
+caa_sf <- st_as_sf(caa_contiguous, coords = c("fac_long", "fac_lat"),
+                   crs = 4326, agr = "constant")
+ruca_sf <- st_transform(ruca_sf, st_crs(caa_sf))
+
+# check <- st_join(ruca_sf, caa_sf, st_contains) # st_contains may be too restrictive |>
+check <- st_join(caa_sf, ruca_sf, st_nearest_feature)
+check <- check |>
+  filter(!is.na(registry_id))
+
+ut <- check |>
+  filter(state.x == "49")
+
+aggregate(check$caa_violations, by = list(check$caa_naics == "324110"), FUN = sum)
+
+head(check)
+
+
+table(ut$caa_3yr_compl_qtrs_history)
+
+test <- check[which(is.na(check$registry_id)), ]
+
+table(is.na(check$registry_id))
+table(check$state.x)
+
+head(check[which(!is.na(check$fac_name)), ])
+check$pop_density <- as.numeric(check$pop_density)
+check$tract_pop <- as.numeric(check$tract_pop)
+
+check$primary_ruca <- as.factor(check$primary_ruca)
+
+check$short_ruca <- ifelse(check$primary_ruca %in% c("1", "2", "3", "4", "5", "6", "7"),
+                           "urban", "rural")
+
+
+library(ggplot2)
+names(check)
+
+ggplot(check) +
+  aes(x = short_ruca, y = tract_pop, color = primary_ruca) +
+  geom_jitter() +
+  theme(legend.position = "none")
+
+summary(aov(pop_density ~ short_ruca, data = check))
+
+check <- check |>
+  drop_na()
+
+
+
+ruca_sf[which(st_intersects(caa_sf, ruca_sf, sparse = FALSE)), ]$geoid
+summary(st_intersects(caa_sf, ruca_sf))
+int <- st_intersects(caa_sf, ruca_sf)
+caa_sf$ruca <- int
+
+caa_sf$match <- apply(pnts, 1, function(row) {  
+   # transformation to palnar is required, since sf library assumes planar projection 
+   tt1_pl <- st_transform(tt1, 2163)   
+   coords <- as.data.frame(matrix(row, nrow = 1, 
+     dimnames = list("", c("x", "y"))))   
+   #pnt_sf <- st_transform(st_sfc(st_point(row),crs = 4326), 2163)
+   # st_intersects with sparse = FALSE returns a logical matrix
+   # with rows corresponds to argument 1 (points) and 
+   # columns to argument 2 (polygons)
+
+    
+})
+
+
+
+```
+
+
+
+
+
+
